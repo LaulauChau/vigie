@@ -94,10 +94,9 @@ class AssessmentOutput(BaseModel):
 
     @field_validator("audience")
     @classmethod
-    def _no_repeats(cls, v: list[Audience]) -> list[Audience]:
-        if len(set(v)) != len(v):
-            raise ValueError("audience repeats a role")
-        return v
+    def _as_subset(cls, v: list[Audience]) -> list[Audience]:
+        # The schema cannot stop the model from repeating a role; that is harmless.
+        return list(dict.fromkeys(v))
 
     @field_validator("topic")
     @classmethod

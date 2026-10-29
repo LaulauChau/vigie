@@ -63,7 +63,8 @@ def test_pending_items_get_an_assessment_and_a_second_run_calls_no_llm(store: St
     # Skipped Items and Items not extracted yet have no text to assess.
     add_item(store, "https://blog.example.com/teaser", text=None)
     world = FakeWorld({})
-    world.replies = [reply()]
+    # A role repeated by the model counts once.
+    world.replies = [reply(audience=["Dev", "Tech lead", "Dev", "Data"])]
 
     report = score(CONFIG, store, world, MODEL)
 
@@ -72,7 +73,7 @@ def test_pending_items_get_an_assessment_and_a_second_run_calls_no_llm(store: St
     assert assessment.item_id == item.id
     assert assessment.score == 8
     assert assessment.summary_fr.startswith("L'équipe fait tourner des agents")
-    assert assessment.audience == ("Dev", "Tech lead")
+    assert assessment.audience == ("Dev", "Tech lead", "Data")
     assert assessment.topic == "pratique-dev-data"
     assert assessment.reason == "Retour d'expérience concret et chiffré."
     assert assessment.model == MODEL

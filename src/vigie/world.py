@@ -4,7 +4,6 @@ The application receives one `World` object. Tests pass a fake; the CLI passes
 `RealWorld`. Later capabilities (Slack) are added here too.
 """
 
-import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -123,7 +122,7 @@ class RealWorld:
         )
         self._youtube = YouTubeTranscriptApi()
         self._ollama = ollama.Client(host=ollama_host, timeout=LLM_TIMEOUT)
-        self._ollama_host = ollama_host or os.environ.get("OLLAMA_HOST") or "localhost:11434"
+        self._ollama_host = ollama_host or "the default host"
 
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
