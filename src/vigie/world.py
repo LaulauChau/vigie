@@ -53,7 +53,8 @@ class RealWorld:
             headers["If-Modified-Since"] = last_modified
         try:
             r = self._http.get(url, headers=headers)
-        except httpx.HTTPError as e:
+        # InvalidURL (a mistyped Source URL) is not an HTTPError subclass.
+        except (httpx.HTTPError, httpx.InvalidURL) as e:
             raise FetchError(f"{type(e).__name__}: {e}") from e
         return Response(
             status=r.status_code,

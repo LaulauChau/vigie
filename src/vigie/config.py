@@ -78,6 +78,7 @@ def _check_regex(pattern: str) -> str:
 
 
 Source = Annotated[RssSource | YoutubeSource | HtmlIndexSource, Field(discriminator="type")]
+SOURCE_TYPES = ("rss", "youtube", "html_index")
 
 
 class Config(_Model):
@@ -138,7 +139,7 @@ def _describe(error: ValidationError, raw: object) -> str:
     for err in error.errors():
         loc = list(err["loc"])
         # Discriminated unions add the tag to the location (sources.3.rss.url); drop it.
-        if len(loc) >= 3 and loc[0] == "sources" and loc[2] in ("rss", "youtube", "html_index"):
+        if len(loc) >= 3 and loc[0] == "sources" and loc[2] in SOURCE_TYPES:
             del loc[2]
         where = ".".join(str(p) for p in loc) or "(top level)"
         lines.append(f"  - {where}{_source_label(loc, raw)}: {_message(err)}")
@@ -157,10 +158,11 @@ def _source_label(loc: list[int | str], raw: object) -> str:
 
 
 def _message(err: Mapping[str, object]) -> str:
+    expected = ", ".join(SOURCE_TYPES)
     if err["type"] == "union_tag_invalid":
         ctx = err.get("ctx")
         tag = ctx.get("tag") if isinstance(ctx, dict) else "?"
-        return f"unknown Source type {tag!r}, expected one of: rss, youtube, html_index"
+        return f"unknown Source type {tag!r}, expected one of: {expected}"
     if err["type"] == "union_tag_not_found":
-        return "missing Source type, expected one of: rss, youtube, html_index"
+        return f"missing Source type, expected one of: {expected}"
     return str(err["msg"])
