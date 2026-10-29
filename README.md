@@ -18,6 +18,7 @@ Settings, Topics and Sources live in `vigie.yaml`. Pass another file with `--con
 ```sh
 uv run --env-file .env vigie --help
 uv run --env-file .env vigie check-sources   # status table of every Source, writes nothing
+uv run --env-file .env vigie collect         # store new RSS/Atom Items and their text in DB_PATH
 ```
 
 ## Development

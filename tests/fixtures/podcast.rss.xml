@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Example Space</title>
+    <link>https://space.example.com/</link>
+    <description>Episodes and essays</description>
+    <item>
+      <title>Episode 12: agents in production</title>
+      <link>https://space.example.com/p/episode-12</link>
+      <pubDate>Mon, 26 Oct 2026 07:00:00 GMT</pubDate>
+      <enclosure url="https://cdn.example.com/episode-12.mp3" length="58000000" type="audio/mpeg"/>
+      <itunes:duration>1:02:03</itunes:duration>
+    </item>
+    <item>
+      <title>Essay: the cost of tokens</title>
+      <link>https://space.example.com/p/cost-of-tokens</link>
+    </item>
+    <item>
+      <title>Episode 1: hello</title>
+      <link>https://space.example.com/p/episode-1</link>
+      <pubDate>Sat, 01 Aug 2026 07:00:00 GMT</pubDate>
+      <enclosure url="https://cdn.example.com/episode-1.mp3" length="40000000" type="audio/mpeg"/>
+      <itunes:duration>2700</itunes:duration>
+    </item>
+  </channel>
+</rss>

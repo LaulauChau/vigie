@@ -2,14 +2,13 @@
 
 import re
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
-from time import struct_time
+from datetime import date
 from urllib.parse import urljoin, urlsplit
 
-import feedparser
 from bs4 import BeautifulSoup
 
 from vigie.config import Config, HtmlIndexSource, Source
+from vigie.feeds import NotAFeed, entry_date, parse_feed
 from vigie.world import FetchError, World
 
 
@@ -82,25 +81,15 @@ def _check(source: Source, world: World) -> SourceCheck:
 
 
 def _check_feed(row: SourceCheck, source: Source, body: bytes) -> SourceCheck:
-    feed = feedparser.parse(body)
-    # feedparser is lenient: `bozo` alone also flags minor issues in usable feeds,
-    # and well-formed HTML is not bozo, it just has no feed version.
-    if not feed.entries and (feed.bozo or not feed.version):
-        reason = feed.get("bozo_exception") or "no RSS or Atom content"
-        return replace(row, error=f"not a feed: {reason}")
-    entries = feed.entries
+    try:
+        entries = parse_feed(body)
+    except NotAFeed as e:
+        return replace(row, error=str(e))
     if source.type == "youtube":
         # Safety net: the long-form playlist should already leave Shorts out.
         entries = [e for e in entries if "/shorts/" not in e.get("link", "")]
-    dates = [d for d in map(_entry_date, entries) if d is not None]
+    dates = [d for d in map(entry_date, entries) if d is not None]
     return replace(row, entries=len(entries), newest=max(dates).date() if dates else None)
-
-
-def _entry_date(entry: feedparser.FeedParserDict) -> datetime | None:
-    parsed: struct_time | None = entry.get("published_parsed") or entry.get("updated_parsed")
-    if parsed is None:
-        return None
-    return datetime(*parsed[:6], tzinfo=UTC)
 
 
 def _check_index(row: SourceCheck, source: HtmlIndexSource, body: bytes) -> SourceCheck:

@@ -20,7 +20,8 @@ class FakeWorld:
     def __init__(self, routes: dict[str, Response | Exception], now: datetime = NOW):
         self.routes = routes
         self.fetches: list[tuple[str, str | None, str | None]] = []
-        self._now = now
+        # Tests move the clock forward to simulate a later run.
+        self.current_time = now
 
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
@@ -34,7 +35,7 @@ class FakeWorld:
         return route
 
     def now(self) -> datetime:
-        return self._now
+        return self.current_time
 
 
 def ok(name: str) -> Response:
