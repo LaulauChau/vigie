@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from vigie.config import Config
-from vigie.world import FetchError, Response
+from vigie.world import FetchError, Response, TranscriptSegment
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -15,13 +15,18 @@ def fixture(name: str) -> bytes:
 
 
 class FakeWorld:
-    """Serves canned responses by URL and records every fetch."""
+    """Serves canned responses by URL and records every fetch.
+
+    Transcripts are scripted by video id; a video with none scripted has no transcript.
+    """
 
     def __init__(self, routes: dict[str, Response | Exception], now: datetime = NOW):
         self.routes = routes
         self.fetches: list[tuple[str, str | None, str | None]] = []
         # Tests move the clock forward to simulate a later run.
         self.current_time = now
+        self.transcripts: dict[str, list[TranscriptSegment] | Exception] = {}
+        self.transcript_requests: list[str] = []
 
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
@@ -33,6 +38,13 @@ class FakeWorld:
         if isinstance(route, Exception):
             raise route
         return route
+
+    def transcript(self, video_id: str) -> list[TranscriptSegment] | None:
+        self.transcript_requests.append(video_id)
+        scripted = self.transcripts.get(video_id)
+        if isinstance(scripted, Exception):
+            raise scripted
+        return scripted
 
     def now(self) -> datetime:
         return self.current_time

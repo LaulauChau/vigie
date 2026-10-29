@@ -142,11 +142,15 @@ class Store:
         """Items with neither text nor skip reason yet."""
         return [i for i in self.items() if i.content is None and i.skip_reason is None]
 
-    def set_text(self, item_id: int, content: str, word_count: int) -> None:
+    def set_text(
+        self, item_id: int, content: str, word_count: int, duration_s: int | None = None
+    ) -> None:
+        """Store the Item's text; a duration, when given, replaces the stored one."""
         with self._db:
             self._db.execute(
-                "UPDATE items SET content = ?, word_count = ? WHERE id = ?",
-                (content, word_count, item_id),
+                "UPDATE items SET content = ?, word_count = ?,"
+                " duration_s = COALESCE(?, duration_s) WHERE id = ?",
+                (content, word_count, duration_s, item_id),
             )
 
     def skip(self, item_id: int, reason: str) -> None:

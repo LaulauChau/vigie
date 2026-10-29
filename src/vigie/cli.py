@@ -43,7 +43,7 @@ def check_sources_command(ctx: typer.Context) -> None:
 
 @app.command("collect")
 def collect_command(ctx: typer.Context) -> None:
-    """Store new Items from the RSS/Atom Sources, with their text."""
+    """Store new Items from the RSS/Atom and YouTube Sources, with their text."""
     config, env = _load(ctx)
     store = open_store(env.db_path)
     try:
