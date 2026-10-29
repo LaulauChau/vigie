@@ -1,0 +1,113 @@
+# Vigie configuration: settings, Topics and Sources.
+# Machine-specific values and secrets live in environment variables (see .env.example).
+
+settings:
+  window_days: 7        # days a Digest covers
+  min_score: 6          # lowest Score an Item needs to be eligible
+  max_items: 5          # most Picks in a Digest
+  max_per_topic: 3      # most Picks sharing one Topic
+  shortlist_size: 10    # best-scored Items compared by the ranking call
+  max_age_days: 30      # older Items are ignored at collection
+
+# Used by the scoring prompt (classification) and the per-Topic quota.
+topics:
+  - id: pratique-dev-data
+    description: >-
+      Comment les développeurs, data engineers et data analysts utilisent concrètement l'IA
+      au quotidien : workflows agentiques, agents de code en parallèle, orchestration de
+      plusieurs agents, git worktrees, plan mode, fichiers de contexte (CLAUDE.md, AGENTS.md),
+      skills, hooks, serveurs MCP, revue du code généré, tests, IA dans les pipelines et
+      l'analyse de données, retours d'expérience et pièges rencontrés.
+  - id: cas-usage-entreprise
+    description: >-
+      Adoption de l'IA générative en entreprise et dans les équipes : cas d'usage métier
+      concrets, retours d'expérience chiffrés, conduite du changement, gouvernance, usages
+      hors équipe tech, intégration de l'IA dans des projets clients data et logiciel.
+  - id: risques-et-couts
+    description: >-
+      Limites et risques de l'IA dans le dev et la data : sécurité (prompt injection, fuite
+      de données, supply chain), qualité et dette du code généré, coûts et consommation de
+      tokens, confidentialité, modèles locaux ou auto-hébergés.
+
+# Source types:
+#   rss         RSS or Atom feed (url)
+#   youtube     a channel's long-form-only playlist feed (playlist_id, UULF...)
+#   html_index  an index page; article links are found with link_regex, searched
+#               against each same-host link's path, minus any exclude pattern
+sources:
+  # HTML index
+  - name: Anthropic Engineering
+    type: html_index
+    url: https://www.anthropic.com/engineering
+    # Articles moved under /research/; team pages live there too.
+    link_regex: ^/research/[^/]+/?$
+    exclude:
+      - ^/research/team(/|$)
+  - name: Claude Blog
+    type: html_index
+    url: https://claude.com/resources/articles
+    # The page shows only the latest 10 articles.
+    link_regex: ^/resources/articles/[^/]+/?$
+
+  # RSS/Atom
+  - name: GitHub Blog AI & ML
+    type: rss
+    url: https://github.blog/ai-and-ml/feed/
+  - name: Simon Willison
+    type: rss
+    url: https://simonwillison.net/atom/entries/   # long-form entries, not /everything/
+  - name: martinfowler.com
+    type: rss
+    url: https://martinfowler.com/feed.atom
+  - name: Armin Ronacher
+    type: rss
+    url: https://lucumr.pocoo.org/feed.atom
+  - name: Mitchell Hashimoto
+    type: rss
+    url: https://mitchellh.com/feed.xml            # title and link only
+  - name: Geoffrey Huntley
+    type: rss
+    url: https://ghuntley.com/rss/
+  - name: Addy Osmani
+    type: rss
+    url: https://addyo.substack.com/feed
+  - name: Hamel Husain
+    type: rss
+    url: https://hamel.dev/index.xml
+  - name: The Pragmatic Engineer
+    type: rss
+    url: https://newsletter.pragmaticengineer.com/feed
+  - name: Latent Space
+    type: rss
+    url: https://latent.space/feed
+
+  # HN: one hnrss query per phrase; a single OR query splits quoted phrases.
+  - name: HN "Claude Code"
+    type: rss
+    url: https://hnrss.org/newest?q=%22Claude+Code%22&points=100&count=50
+  - name: HN "coding agent"
+    type: rss
+    url: https://hnrss.org/newest?q=%22coding+agent%22&points=100&count=50
+  - name: HN agentic
+    type: rss
+    url: https://hnrss.org/newest?q=agentic&points=100&count=50
+  - name: HN Codex
+    type: rss
+    url: https://hnrss.org/newest?q=Codex&points=100&count=50
+
+  # YouTube: long-form-only playlists (UULF + channel id without its UC prefix).
+  - name: Theo
+    type: youtube
+    playlist_id: UULFbRP3c757lWg9M-U7TyEkXA      # channel UCbRP3c757lWg9M-U7TyEkXA
+  - name: Matt Pocock
+    type: youtube
+    playlist_id: UULFswG6FSbgZjbWtdf_hMLaow      # channel UCswG6FSbgZjbWtdf_hMLaow
+  - name: IndyDevDan
+    type: youtube
+    playlist_id: UULF_x36zCEGilGpB1m-V4gmjg      # channel UC_x36zCEGilGpB1m-V4gmjg
+  - name: AI Engineer
+    type: youtube
+    playlist_id: UULFLKPca3kwwd-B59HNr-_lvA      # channel UCLKPca3kwwd-B59HNr-_lvA
+
+# Removed: Reddit r/ClaudeAI (thread links, short posts, strict rate limit) and
+# Kent Beck (65-word paid previews).

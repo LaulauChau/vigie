@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example blog</title>
+    <link>https://blog.example.com/</link>
+    <description>Posts</description>
+    <item>
+      <title>Running agents in parallel with worktrees</title>
+      <link>https://blog.example.com/parallel-agents</link>
+      <pubDate>Mon, 20 Oct 2026 08:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Reviewing generated code</title>
+      <link>https://blog.example.com/reviewing-generated-code</link>
+      <pubDate>Tue, 27 Oct 2026 09:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>MCP servers in a data team</title>
+      <link>https://blog.example.com/mcp-data-team</link>
+      <pubDate>Sun, 25 Oct 2026 18:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
