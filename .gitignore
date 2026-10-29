@@ -12,3 +12,4 @@ wheels/
 # Local settings and data
 .env
 *.db
+digests/

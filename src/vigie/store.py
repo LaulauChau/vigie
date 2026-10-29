@@ -1,4 +1,4 @@
-"""Store: the SQLite database holding Sources, Items and Assessments."""
+"""Store: the SQLite database holding Sources, Items, Assessments and Digests."""
 
 import json
 import sqlite3
@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS assessments (
     model TEXT NOT NULL,
     prompt_hash TEXT NOT NULL,
     assessed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS digests (
+    id INTEGER PRIMARY KEY,
+    week TEXT NOT NULL UNIQUE,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    pick_ids TEXT NOT NULL,
+    rendered_md TEXT NOT NULL,
+    built_at TEXT NOT NULL
 );
 """
 
@@ -101,6 +111,19 @@ class Assessment:
     # Hash of the fully rendered prompt, Item text aside: which prompt version gave this.
     prompt_hash: str
     assessed_at: datetime
+
+
+@dataclass(frozen=True)
+class Digest:
+    # ISO week, such as 2026-W44.
+    week: str
+    window_start: datetime
+    window_end: datetime
+    # Item ids, in Pick order.
+    pick_ids: tuple[int, ...]
+    # The Markdown file's content: the message, then the review appendix.
+    rendered_md: str
+    built_at: datetime
 
 
 class Store:
@@ -225,6 +248,29 @@ class Store:
         rows = self._db.execute("SELECT * FROM assessments ORDER BY item_id")
         return [_assessment(r) for r in rows]
 
+    def digest(self, week: str) -> Digest | None:
+        row = self._db.execute("SELECT * FROM digests WHERE week = ?", (week,)).fetchone()
+        return _digest(row) if row else None
+
+    def save_digest(self, d: Digest) -> None:
+        """Store the week's Digest, replacing any earlier one for the same week."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO digests (week, window_start, window_end, pick_ids, rendered_md,"
+                " built_at) VALUES (?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT (week) DO UPDATE SET window_start = excluded.window_start,"
+                " window_end = excluded.window_end, pick_ids = excluded.pick_ids,"
+                " rendered_md = excluded.rendered_md, built_at = excluded.built_at",
+                (
+                    d.week,
+                    d.window_start.isoformat(),
+                    d.window_end.isoformat(),
+                    json.dumps(list(d.pick_ids)),
+                    d.rendered_md,
+                    d.built_at.isoformat(),
+                ),
+            )
+
     def close(self) -> None:
         self._db.close()
 
@@ -277,6 +323,17 @@ def _assessment(row: sqlite3.Row) -> Assessment:
         model=row["model"],
         prompt_hash=row["prompt_hash"],
         assessed_at=datetime.fromisoformat(row["assessed_at"]),
+    )
+
+
+def _digest(row: sqlite3.Row) -> Digest:
+    return Digest(
+        week=row["week"],
+        window_start=datetime.fromisoformat(row["window_start"]),
+        window_end=datetime.fromisoformat(row["window_end"]),
+        pick_ids=tuple(json.loads(row["pick_ids"])),
+        rendered_md=row["rendered_md"],
+        built_at=datetime.fromisoformat(row["built_at"]),
     )
 
 

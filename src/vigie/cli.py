@@ -12,6 +12,7 @@ from vigie.assess import ScoreReport, collect_and_score, render_score_summary, s
 from vigie.check_sources import check_sources, render_table
 from vigie.collect import render_summary
 from vigie.config import Config, ConfigError, Env, load_config, load_env
+from vigie.digest import build_digest, render_digest_summary
 from vigie.store import open_store
 from vigie.world import RealWorld
 
@@ -91,6 +92,31 @@ def score_command(
     finally:
         store.close()
     _echo_score_summary(report)
+
+
+@app.command("digest")
+def digest_command(
+    ctx: typer.Context,
+    rebuild: Annotated[
+        bool, typer.Option("--rebuild", help="Build this week's Digest again.")
+    ] = False,
+    since: Annotated[
+        str | None,
+        typer.Option(help="A Window other than window_days, e.g. 14d. Implies --rebuild."),
+    ] = None,
+    out: Annotated[
+        Path, typer.Option("--out", help="Folder the Markdown file is written to.")
+    ] = Path("digests"),
+) -> None:
+    """Build this week's Digest, store it and write it as Markdown for review."""
+    window = parse_duration(since) if since is not None else None
+    config, env = _load(ctx)
+    store = open_store(env.db_path)
+    try:
+        report = build_digest(config, store, RealWorld(), out, rebuild=rebuild, since=window)
+    finally:
+        store.close()
+    typer.echo(render_digest_summary(report))
 
 
 def _echo_score_summary(report: ScoreReport) -> None:

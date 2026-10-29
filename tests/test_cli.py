@@ -16,6 +16,7 @@ def test_help_lists_the_commands() -> None:
     assert "check-sources" in result.output
     assert "collect" in result.output
     assert "score" in result.output
+    assert "digest" in result.output
 
 
 @pytest.mark.parametrize(
@@ -49,3 +50,23 @@ def test_invalid_config_exits_with_its_message(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert f"invalid config in {path}" in result.output
+
+
+def test_digest_rejects_a_since_that_is_not_a_duration() -> None:
+    result = runner.invoke(app, ["digest", "--since", "two weeks"])
+
+    assert result.exit_code == 2
+    assert "is not a duration such as 14d" in result.output
+
+
+def test_digest_with_nothing_collected_explains_the_empty_digest(tmp_path: Path) -> None:
+    out = tmp_path / "digests"
+
+    result = runner.invoke(
+        app, ["digest", "--out", str(out)], env={"DB_PATH": str(tmp_path / "vigie.db")}
+    )
+
+    assert result.exit_code == 0
+    assert "nothing stored or written" in result.output
+    assert "Items collected in the Window: 0" in result.output
+    assert not out.exists()
