@@ -3,6 +3,7 @@
 import os
 import re
 from datetime import timedelta
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -13,6 +14,7 @@ from vigie.check_sources import check_sources, render_table
 from vigie.collect import render_summary
 from vigie.config import Config, ConfigError, Env, load_config, load_env
 from vigie.digest import build_digest, render_digest_summary
+from vigie.send import render_send_summary, send_digest
 from vigie.store import open_store
 from vigie.world import RealWorld
 
@@ -94,9 +96,20 @@ def score_command(
     _echo_score_summary(report)
 
 
+class Channel(StrEnum):
+    slack = "slack"
+
+
 @app.command("digest")
 def digest_command(
     ctx: typer.Context,
+    send: Annotated[
+        Channel | None,
+        typer.Option(help="Post this week's stored Digest, as reviewed. Builds nothing."),
+    ] = None,
+    force: Annotated[
+        bool, typer.Option("--force", help="With --send, send a Digest already sent.")
+    ] = False,
     rebuild: Annotated[
         bool, typer.Option("--rebuild", help="Build this week's Digest again.")
     ] = False,
@@ -110,7 +123,18 @@ def digest_command(
 ) -> None:
     """Build this week's Digest, store it and write it as Markdown for review."""
     window = parse_duration(since) if since is not None else None
+    if force and send is None:
+        raise typer.BadParameter("only applies with --send", param_hint="'--force'")
+    if send is not None and (rebuild or window is not None):
+        raise typer.BadParameter(
+            "--send posts the stored Digest: build it with --rebuild or --since first,"
+            " review it, then send it",
+            param_hint="'--send'",
+        )
     config, env = _load(ctx)
+    if send is not None:
+        _send(env, force)
+        return
     store = open_store(env.db_path)
     try:
         report = build_digest(
@@ -125,6 +149,20 @@ def digest_command(
     finally:
         store.close()
     typer.echo(render_digest_summary(report))
+    if report.refused:
+        raise typer.Exit(1)
+
+
+def _send(env: Env, force: bool) -> None:
+    """`vigie digest --send slack`."""
+    store = open_store(env.db_path)
+    try:
+        report = send_digest(store, RealWorld(slack_webhook_url=env.slack_webhook_url), force=force)
+    finally:
+        store.close()
+    typer.echo(render_send_summary(report))
+    if not report.sent:
+        raise typer.Exit(1)
 
 
 def _echo_score_summary(report: ScoreReport) -> None:

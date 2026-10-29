@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from vigie.urls import url_hash
 
@@ -57,9 +57,17 @@ CREATE TABLE IF NOT EXISTS digests (
     window_end TEXT NOT NULL,
     pick_ids TEXT NOT NULL,
     rendered_md TEXT NOT NULL,
-    built_at TEXT NOT NULL
+    slack_payload TEXT,
+    built_at TEXT NOT NULL,
+    sent_to TEXT,
+    sent_at TEXT
 );
 """
+
+# Columns added since a table was first created: `open_store` adds them to older databases.
+ADDED_COLUMNS = {
+    "digests": {"slack_payload": "TEXT", "sent_to": "TEXT", "sent_at": "TEXT"},
+}
 
 
 @dataclass(frozen=True)
@@ -124,6 +132,11 @@ class Digest:
     # The Markdown file's content: the message, then the review appendix.
     rendered_md: str
     built_at: datetime
+    # The message as Slack Block Kit. None for a Digest stored before Slack was supported.
+    slack_payload: dict[str, Any] | None = None
+    # Where and when it was posted; None until then.
+    sent_to: str | None = None
+    sent_at: datetime | None = None
 
 
 class Store:
@@ -257,18 +270,35 @@ class Store:
         with self._db:
             self._db.execute(
                 "INSERT INTO digests (week, window_start, window_end, pick_ids, rendered_md,"
-                " built_at) VALUES (?, ?, ?, ?, ?, ?)"
+                " slack_payload, built_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT (week) DO UPDATE SET window_start = excluded.window_start,"
                 " window_end = excluded.window_end, pick_ids = excluded.pick_ids,"
-                " rendered_md = excluded.rendered_md, built_at = excluded.built_at",
+                " rendered_md = excluded.rendered_md, slack_payload = excluded.slack_payload,"
+                " built_at = excluded.built_at",
                 (
                     d.week,
                     d.window_start.isoformat(),
                     d.window_end.isoformat(),
                     json.dumps(list(d.pick_ids)),
                     d.rendered_md,
+                    _payload_json(d.slack_payload),
                     d.built_at.isoformat(),
                 ),
+            )
+
+    def sent_pick_ids(self, other_than: str) -> set[int]:
+        """The Picks of every Digest sent for a week other than `other_than`."""
+        rows = self._db.execute(
+            "SELECT pick_ids FROM digests WHERE sent_at IS NOT NULL AND week != ?", (other_than,)
+        )
+        return {item_id for r in rows for item_id in json.loads(r["pick_ids"])}
+
+    def mark_digest_sent(self, week: str, sent_to: str, sent_at: datetime) -> None:
+        """Record where and when the week's Digest was posted."""
+        with self._db:
+            self._db.execute(
+                "UPDATE digests SET sent_to = ?, sent_at = ? WHERE week = ?",
+                (sent_to, sent_at.isoformat(), week),
             )
 
     def close(self) -> None:
@@ -282,7 +312,18 @@ def open_store(path: Path) -> Store:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _add_columns(conn)
     return Store(conn)
+
+
+def _add_columns(conn: sqlite3.Connection) -> None:
+    """Bring a database created by an older Vigie up to the current schema."""
+    with conn:
+        for table, columns in ADDED_COLUMNS.items():
+            existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for name, type_ in columns.items():
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {type_}")
 
 
 def _source_state(row: sqlite3.Row) -> SourceState:
@@ -334,7 +375,14 @@ def _digest(row: sqlite3.Row) -> Digest:
         pick_ids=tuple(json.loads(row["pick_ids"])),
         rendered_md=row["rendered_md"],
         built_at=datetime.fromisoformat(row["built_at"]),
+        slack_payload=json.loads(row["slack_payload"]) if row["slack_payload"] else None,
+        sent_to=row["sent_to"],
+        sent_at=_dt(row["sent_at"]),
     )
+
+
+def _payload_json(value: dict[str, Any] | None) -> str | None:
+    return json.dumps(value, ensure_ascii=False) if value is not None else None
 
 
 def _dt(value: str | None) -> datetime | None:

@@ -1,11 +1,15 @@
-"""`vigie digest`: this week's Digest, built from the assessed Items and written as Markdown."""
+"""`vigie digest`: this week's Digest, built from the assessed Items and written as Markdown.
+
+The Slack payload is rendered and stored along with it, so that sending posts what was reviewed.
+"""
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -67,7 +71,7 @@ class ShortlistEntry:
 class DigestReport:
     # ISO week, such as 2026-W44.
     week: str
-    # None when there was no Pick: nothing was stored or written.
+    # None when there was no Pick, or a refusal: nothing was stored or written.
     path: Path | None
     picks: int = 0
     # True when the Digest already stored for the week was written again, unchanged.
@@ -79,6 +83,8 @@ class DigestReport:
     min_score: int = 0
     # Shortlist size: when above zero with no Pick, the ranking kept none of it.
     shortlisted: int = 0
+    # Why the Digest was not rebuilt, when it was refused.
+    refused: str | None = None
 
 
 def build_digest(
@@ -95,12 +101,19 @@ def build_digest(
 
     When a Digest is already stored for the week, it is written again as is, unless
     `rebuild` or `since` asks for a new one. `since` replaces `window_days` as the Window.
-    With no Pick, nothing is stored or written.
+    With no Pick, nothing is stored or written. A Digest already sent is never rebuilt, so
+    that the Picks it posted stay out of later Digests.
     """
     now = world.now()
-    year, week_number, _ = now.isocalendar()
-    week = f"{year}-W{week_number:02d}"
+    week = iso_week(now)
     stored = store.digest(week)
+    if stored is not None and stored.sent_at is not None and (rebuild or since is not None):
+        return DigestReport(
+            week=week,
+            path=None,
+            refused=f"Digest for {week} already sent to {stored.sent_to}"
+            f" on {stored.sent_at:%Y-%m-%d %H:%M %Z}: not rebuilt.",
+        )
     if stored is not None and not rebuild and since is None:
         path = _write(out_dir, stored)
         return DigestReport(week=week, path=path, picks=len(stored.pick_ids), reused=True)
@@ -108,7 +121,10 @@ def build_digest(
     in_window = [i for i in store.items() if i.published_at >= start]
     assessments = {a.item_id: a for a in store.assessments()}
     assessed = [ShortlistEntry(i, assessments[i.id]) for i in in_window if i.id in assessments]
-    ranked, order_label = _rank(_shortlist(assessed, config.settings), world, model)
+    # A Pick already posted for another week is never posted again.
+    sent = store.sent_pick_ids(other_than=week)
+    eligible = [e for e in assessed if e.item.id not in sent]
+    ranked, order_label = _rank(_shortlist(eligible, config.settings), world, model)
     shortlist = _choose(ranked, config.settings)
     picks = _picks(shortlist)
     if not picks:
@@ -129,13 +145,22 @@ def build_digest(
         rendered_md=_render_message(now.date(), picks)
         + _render_appendix(start, now, order_label, shortlist),
         built_at=now,
+        slack_payload=_render_slack(now.date(), picks),
     )
     store.save_digest(digest)
     path = _write(out_dir, digest)
     return DigestReport(week=week, path=path, picks=len(picks))
 
 
+def iso_week(now: datetime) -> str:
+    """The ISO week a Digest built at `now` belongs to, such as 2026-W44."""
+    year, week, _ = now.isocalendar()
+    return f"{year}-W{week:02d}"
+
+
 def render_digest_summary(report: DigestReport) -> str:
+    if report.refused:
+        return report.refused
     if report.path is None:
         best = "none" if report.best_score is None else str(report.best_score)
         lines = [
@@ -313,25 +338,61 @@ def _picks(shortlist: list[ShortlistEntry]) -> list[ShortlistEntry]:
 
 def _render_message(built_on: date, picks: list[ShortlistEntry]) -> str:
     """The message, as it will be posted."""
-    year, week, _ = built_on.isocalendar()
-    monday = date.fromisocalendar(year, week, 1)
-    blocks = [f"# 🧭 Veille IA — semaine du {monday:%d/%m}", INTRO]
+    blocks = [f"# {_header(built_on)}", INTRO]
     for n, pick in enumerate(picks, start=1):
         blocks += _render_pick(n, pick)
     blocks.append(FOOTER)
     return "\n\n".join(blocks) + "\n"
 
 
-def _render_pick(n: int, pick: ShortlistEntry) -> list[str]:
+def _render_pick(
+    n: int, pick: ShortlistEntry, bold: str = "**", escape: Callable[[str], str] = str
+) -> list[str]:
+    """The Pick's lines; Slack takes its own `bold` markup and `escape`."""
     item, assessment = pick.item, pick.assessment
+    return [
+        f"{bold}{n}. {escape(item.title)}{bold}  {_details(item)}",
+        escape(assessment.summary_fr),
+        f"👥 Pour qui : {' · '.join(assessment.audience)}",
+        f"🔗 {escape(item.url)}",
+    ]
+
+
+def _render_slack(built_on: date, picks: list[ShortlistEntry]) -> dict[str, Any]:
+    """The same message as `_render_message`, as Slack Block Kit."""
+    header = _header(built_on)
+    blocks: list[dict[str, Any]] = [
+        {"type": "header", "text": {"type": "plain_text", "text": header}},
+        _section(_escape(INTRO)),
+    ]
+    for n, pick in enumerate(picks, start=1):
+        blocks.append(_section("\n".join(_render_pick(n, pick, bold="*", escape=_escape))))
+    blocks.append(_section(_escape(FOOTER)))
+    # `text` is what notifications show.
+    return {"text": header, "blocks": blocks}
+
+
+def _section(mrkdwn: str) -> dict[str, Any]:
+    return {"type": "section", "text": {"type": "mrkdwn", "text": mrkdwn}}
+
+
+def _escape(text: str) -> str:
+    """Slack reads `&`, `<` and `>` as markup: escape them in plain text."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _header(built_on: date) -> str:
+    """The header, dated with the Monday of the build date's week."""
+    year, week, _ = built_on.isocalendar()
+    monday = date.fromisocalendar(year, week, 1)
+    return f"🧭 Veille IA — semaine du {monday:%d/%m}"
+
+
+def _details(item: Item) -> str:
+    """Kind icon, length when known, and domain: `📄 2 min · claude.com`."""
     length = _length(item)
     details = f"{length} · " if length else ""
-    return [
-        f"**{n}. {item.title}**  {KIND_ICONS[item.kind]} {details}{_domain(item.url)}",
-        assessment.summary_fr,
-        f"👥 Pour qui : {' · '.join(assessment.audience)}",
-        f"🔗 {item.url}",
-    ]
+    return f"{KIND_ICONS[item.kind]} {details}{_domain(item.url)}"
 
 
 def _render_appendix(

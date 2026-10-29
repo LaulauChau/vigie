@@ -1,7 +1,7 @@
 """The outside world: every effect Vigie has beyond its own memory.
 
 The application receives one `World` object. Tests pass a fake; the CLI passes
-`RealWorld`. Later capabilities (Slack) are added here too.
+`RealWorld`.
 """
 
 from dataclasses import dataclass, field
@@ -75,6 +75,10 @@ class LLMError(Exception):
     """Ollama could not be reached, or refused the request."""
 
 
+class SlackError(Exception):
+    """The Slack webhook could not be reached, or refused the payload."""
+
+
 class World(Protocol):
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
@@ -112,9 +116,19 @@ class World(Protocol):
         """
         ...
 
+    def post_slack(self, payload: dict[str, Any]) -> None:
+        """Post a Block Kit message to the Slack Incoming Webhook. Raises SlackError."""
+        ...
+
 
 class RealWorld:
-    def __init__(self, timeout: float = 20.0, ollama_host: str | None = None) -> None:
+    def __init__(
+        self,
+        timeout: float = 20.0,
+        ollama_host: str | None = None,
+        slack_webhook_url: str | None = None,
+    ) -> None:
+        self._slack_webhook_url = slack_webhook_url
         self._http = httpx.Client(
             headers={"User-Agent": USER_AGENT},
             follow_redirects=True,
@@ -198,6 +212,17 @@ class RealWorld:
             if wanted in (_tagged(m.model or ""), _tagged(m.name or "")):
                 return m.context_length
         return None
+
+    def post_slack(self, payload: dict[str, Any]) -> None:
+        if not self._slack_webhook_url:
+            raise SlackError("SLACK_WEBHOOK_URL is not set")
+        # Errors never quote the webhook URL: it is a secret.
+        try:
+            r = self._http.post(self._slack_webhook_url, json=payload)
+        except (httpx.HTTPError, httpx.InvalidURL) as e:
+            raise SlackError(f"Slack webhook: {type(e).__name__}: {e}") from e
+        if r.status_code != 200:
+            raise SlackError(f"Slack webhook answered HTTP {r.status_code}: {r.text[:200]}")
 
     def _llm_error(self, e: Exception) -> LLMError:
         return LLMError(f"Ollama at {self._ollama_host}: {type(e).__name__}: {e}")

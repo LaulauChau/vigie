@@ -70,3 +70,38 @@ def test_digest_with_nothing_collected_explains_the_empty_digest(tmp_path: Path)
     assert "nothing stored or written" in result.output
     assert "Items collected in the Window: 0" in result.output
     assert not out.exists()
+
+
+def test_send_without_a_stored_digest_exits_with_a_pointer_to_vigie_digest(
+    tmp_path: Path,
+) -> None:
+    result = runner.invoke(
+        app,
+        ["digest", "--send", "slack"],
+        env={"DB_PATH": str(tmp_path / "vigie.db"), "SLACK_WEBHOOK_URL": None},
+    )
+
+    assert result.exit_code == 1
+    assert "run `vigie digest` first" in result.output
+
+
+def test_send_only_knows_slack() -> None:
+    result = runner.invoke(app, ["digest", "--send", "teams"])
+
+    assert result.exit_code == 2
+    assert "'teams' is not one of 'slack'" in result.output
+
+
+def test_force_only_applies_with_send() -> None:
+    result = runner.invoke(app, ["digest", "--force"])
+
+    assert result.exit_code == 2
+    assert "only applies with --send" in result.output
+
+
+@pytest.mark.parametrize("build", [["--rebuild"], ["--since", "14d"]])
+def test_send_never_builds(build: list[str]) -> None:
+    result = runner.invoke(app, ["digest", "--send", "slack", *build])
+
+    assert result.exit_code == 2
+    assert "--send posts the stored Digest" in result.output

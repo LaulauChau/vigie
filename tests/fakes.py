@@ -35,6 +35,9 @@ class FakeWorld:
         self.chats: list[ChatRequest] = []
         # What the server's running-models endpoint reports, or raises.
         self.loaded_ctx: int | None | Exception = None
+        # The fake Slack webhook: every payload posted, and an error to raise instead.
+        self.slack_posts: list[dict[str, Any]] = []
+        self.slack_error: Exception | None = None
 
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
@@ -82,6 +85,11 @@ class FakeWorld:
         if isinstance(self.loaded_ctx, Exception):
             raise self.loaded_ctx
         return self.loaded_ctx
+
+    def post_slack(self, payload: dict[str, Any]) -> None:
+        if self.slack_error is not None:
+            raise self.slack_error
+        self.slack_posts.append(payload)
 
 
 @dataclass(frozen=True)
