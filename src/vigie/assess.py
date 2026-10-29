@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationIn
 from vigie.collect import CollectReport, collect
 from vigie.config import Config, Topic
 from vigie.store import Assessment, Item, Store
-from vigie.world import LLMError, Message, World
+from vigie.world import ChatReply, LLMError, Message, World
 
 Audience = Literal["Dev", "Data", "Tech lead", "Cellule IA", "Manager"]
 
@@ -170,6 +170,18 @@ def render_score_summary(report: ScoreReport) -> str:
     return "\n".join(lines)
 
 
+def warn_if_reloaded(reply: ChatReply, model: str, what: str) -> None:
+    """Log a warning when the reply's load time suggests the shared model was reloaded."""
+    if reply.load_seconds >= RELOAD_WARNING_SECONDS:
+        log.warning(
+            "Ollama spent %.1fs loading %s for %s: Vigie may have caused a reload of the"
+            " shared model",
+            reply.load_seconds,
+            model,
+            what,
+        )
+
+
 class _Prompt:
     def __init__(self, topics: list[Topic], context_tokens: int) -> None:
         self.topic_ids = [t.id for t in topics]
@@ -213,14 +225,7 @@ def _assess(
         num_ctx=num_ctx,
         temperature=TEMPERATURE,
     )
-    if reply.load_seconds >= RELOAD_WARNING_SECONDS:
-        log.warning(
-            "Ollama spent %.1fs loading %s for %r: Vigie may have caused a reload of the"
-            " shared model",
-            reply.load_seconds,
-            model,
-            item.title,
-        )
+    warn_if_reloaded(reply, model, repr(item.title))
     try:
         output = AssessmentOutput.model_validate_json(
             reply.text, context={"topics": prompt.topic_ids}

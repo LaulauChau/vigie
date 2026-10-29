@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,7 +30,8 @@ class FakeWorld:
         self.transcripts: dict[str, list[TranscriptSegment] | Exception] = {}
         self.transcript_requests: list[str] = []
         # The fake LLM: scripted replies, answered in order, and the requests received.
-        self.replies: list[str | ChatReply | Exception] = []
+        # A callable reply answers from the request it receives.
+        self.replies: list[str | ChatReply | Exception | Callable[[ChatRequest], str]] = []
         self.chats: list[ChatRequest] = []
         # What the server's running-models endpoint reports, or raises.
         self.loaded_ctx: int | None | Exception = None
@@ -65,12 +67,15 @@ class FakeWorld:
         num_ctx: int | None = None,
         temperature: float | None = None,
     ) -> ChatReply:
-        self.chats.append(ChatRequest(model, messages, schema, think, num_ctx, temperature))
+        request = ChatRequest(model, messages, schema, think, num_ctx, temperature)
+        self.chats.append(request)
         if not self.replies:
             raise AssertionError("unexpected LLM call: no reply scripted")
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
+        if callable(reply):
+            return ChatReply(text=reply(request))
         return ChatReply(text=reply) if isinstance(reply, str) else reply
 
     def loaded_context_size(self, model: str) -> int | None:

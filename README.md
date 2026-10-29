@@ -25,9 +25,9 @@ uv run --env-file .env vigie digest          # build this week's Digest, store i
 uv run --env-file .env vigie digest --rebuild [--since 14d]  # build this week's Digest again
 ```
 
-`vigie digest` picks up to `max_items` Items by Score from the Window. Running it again in the same week writes the stored Digest again, unchanged. The Markdown file shows the message, then a review appendix that is never sent.
+`vigie digest` takes the `shortlist_size` best-scored Items of the Window as the Shortlist, and the LLM ranks them against each other, thinking on, dropping Duplicates and weak Items. Code then walks that order, applying `max_per_topic` and `max_items`. If the ranking call fails or answers garbage, the Picks follow Score order and the appendix says so. Running it again in the same week writes the stored Digest again, unchanged. The Markdown file shows the message, then a review appendix that is never sent.
 
-Scoring never makes the shared Ollama model reload (see `docs/adr/0001-keep-the-shared-ollama-context-size.md`). A warning is logged if a request's load time suggests it did.
+Scoring and ranking never make the shared Ollama model reload (see `docs/adr/0001-keep-the-shared-ollama-context-size.md`). A warning is logged if a request's load time suggests it did.
 
 ## Development
 

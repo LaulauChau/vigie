@@ -113,7 +113,15 @@ def digest_command(
     config, env = _load(ctx)
     store = open_store(env.db_path)
     try:
-        report = build_digest(config, store, RealWorld(), out, rebuild=rebuild, since=window)
+        report = build_digest(
+            config,
+            store,
+            RealWorld(ollama_host=env.ollama_host),
+            env.llm_model,
+            out,
+            rebuild=rebuild,
+            since=window,
+        )
     finally:
         store.close()
     typer.echo(render_digest_summary(report))
