@@ -1,13 +1,16 @@
 """Thin CLI: each command loads the config and calls one application entrypoint."""
 
 import os
+import re
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from vigie.assess import ScoreReport, collect_and_score, render_score_summary, score
 from vigie.check_sources import check_sources, render_table
-from vigie.collect import collect, render_summary
+from vigie.collect import render_summary
 from vigie.config import Config, ConfigError, Env, load_config, load_env
 from vigie.store import open_store
 from vigie.world import RealWorld
@@ -43,11 +46,67 @@ def check_sources_command(ctx: typer.Context) -> None:
 
 @app.command("collect")
 def collect_command(ctx: typer.Context) -> None:
-    """Store new Items from the RSS/Atom, YouTube and HTML index Sources, with their text."""
+    """Store new Items from every Source, with their text, then assess them."""
     config, env = _load(ctx)
     store = open_store(env.db_path)
     try:
-        report = collect(config, store, RealWorld())
+        collected, scored = collect_and_score(
+            config, store, RealWorld(ollama_host=env.ollama_host), env.llm_model
+        )
     finally:
         store.close()
-    typer.echo(render_summary(report))
+    typer.echo(render_summary(collected))
+    _echo_score_summary(scored)
+
+
+@app.command("score")
+def score_command(
+    ctx: typer.Context,
+    rescore: Annotated[
+        bool,
+        typer.Option(
+            "--rescore", help="Assess again every Item in the Window. Fetches nothing."
+        ),
+    ] = False,
+    since: Annotated[
+        str | None,
+        typer.Option(help="With --rescore, a Window other than window_days, e.g. 14d."),
+    ] = None,
+) -> None:
+    """Assess the Items that have text and no Assessment yet."""
+    window = parse_duration(since) if since is not None else None
+    if window is not None and not rescore:
+        raise typer.BadParameter("only applies with --rescore", param_hint="'--since'")
+    config, env = _load(ctx)
+    store = open_store(env.db_path)
+    try:
+        report = score(
+            config,
+            store,
+            RealWorld(ollama_host=env.ollama_host),
+            env.llm_model,
+            rescore=rescore,
+            since=window,
+        )
+    finally:
+        store.close()
+    _echo_score_summary(report)
+
+
+def _echo_score_summary(report: ScoreReport) -> None:
+    typer.echo(render_score_summary(report))
+    if report.error:
+        raise typer.Exit(1)
+
+
+DURATION_UNITS = {"h": "hours", "d": "days", "w": "weeks"}
+
+
+def parse_duration(value: str) -> timedelta:
+    """`14d`, `2w` or `36h`."""
+    match = re.fullmatch(r"(\d+)([hdw])", value.strip())
+    if not match or int(match[1]) == 0:
+        raise typer.BadParameter(
+            f"{value!r} is not a duration such as 14d, 2w or 36h", param_hint="'--since'"
+        )
+    return timedelta(**{DURATION_UNITS[match[2]]: int(match[1])})

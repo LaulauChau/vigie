@@ -1,5 +1,6 @@
-"""Store: the SQLite database holding Sources and Items."""
+"""Store: the SQLite database holding Sources, Items and Assessments."""
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -35,6 +36,18 @@ CREATE TABLE IF NOT EXISTS items (
     word_count INTEGER,
     content TEXT,
     skip_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS assessments (
+    item_id INTEGER PRIMARY KEY REFERENCES items(id),
+    score INTEGER NOT NULL,
+    summary_fr TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_hash TEXT NOT NULL,
+    assessed_at TEXT NOT NULL
 );
 """
 
@@ -74,6 +87,20 @@ class Item:
     # Both empty until the text is extracted; then exactly one is set.
     content: str | None
     skip_reason: str | None
+
+
+@dataclass(frozen=True)
+class Assessment:
+    item_id: int
+    score: int
+    summary_fr: str
+    audience: tuple[str, ...]
+    topic: str
+    reason: str
+    model: str
+    # Hash of the fully rendered prompt, Item text aside: which prompt version gave this.
+    prompt_hash: str
+    assessed_at: datetime
 
 
 class Store:
@@ -165,6 +192,39 @@ class Store:
         with self._db:
             self._db.execute("UPDATE items SET skip_reason = ? WHERE id = ?", (reason, item_id))
 
+    def items_to_assess(self) -> list[Item]:
+        """Items with text and no Assessment yet."""
+        assessed = {r[0] for r in self._db.execute("SELECT item_id FROM assessments")}
+        return [i for i in self.items() if i.content is not None and i.id not in assessed]
+
+    def items_with_text_since(self, start: datetime) -> list[Item]:
+        """Items with text published at or after `start`, assessed or not."""
+        return [i for i in self.items() if i.content is not None and i.published_at >= start]
+
+    def save_assessment(self, a: Assessment) -> None:
+        """Store the Item's Assessment, replacing any earlier one."""
+        with self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO assessments (item_id, score, summary_fr, audience,"
+                " topic, reason, model, prompt_hash, assessed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    a.item_id,
+                    a.score,
+                    a.summary_fr,
+                    json.dumps(list(a.audience), ensure_ascii=False),
+                    a.topic,
+                    a.reason,
+                    a.model,
+                    a.prompt_hash,
+                    a.assessed_at.isoformat(),
+                ),
+            )
+
+    def assessments(self) -> list[Assessment]:
+        rows = self._db.execute("SELECT * FROM assessments ORDER BY item_id")
+        return [_assessment(r) for r in rows]
+
     def close(self) -> None:
         self._db.close()
 
@@ -203,6 +263,20 @@ def _item(row: sqlite3.Row) -> Item:
         word_count=row["word_count"],
         content=row["content"],
         skip_reason=row["skip_reason"],
+    )
+
+
+def _assessment(row: sqlite3.Row) -> Assessment:
+    return Assessment(
+        item_id=row["item_id"],
+        score=row["score"],
+        summary_fr=row["summary_fr"],
+        audience=tuple(json.loads(row["audience"])),
+        topic=row["topic"],
+        reason=row["reason"],
+        model=row["model"],
+        prompt_hash=row["prompt_hash"],
+        assessed_at=datetime.fromisoformat(row["assessed_at"]),
     )
 
 

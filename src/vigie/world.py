@@ -1,14 +1,16 @@
 """The outside world: every effect Vigie has beyond its own memory.
 
 The application receives one `World` object. Tests pass a fake; the CLI passes
-`RealWorld`. Later capabilities (LLM, Slack) are added here too.
+`RealWorld`. Later capabilities (Slack) are added here too.
 """
 
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
+import ollama
 import requests
 from youtube_transcript_api import (
     CouldNotRetrieveTranscript,
@@ -22,6 +24,8 @@ from youtube_transcript_api import (
 )
 
 USER_AGENT = "vigie/0.1 (+https://github.com/LaulauChau/vigie)"
+# The shared server may queue our requests behind colleagues' chats.
+LLM_TIMEOUT = 300.0
 
 # Transcript failures that say nothing about the video itself: YouTube is down,
 # is blocking us, or changed in a way the library cannot handle yet.
@@ -56,6 +60,22 @@ class TranscriptSegment:
     duration: float
 
 
+# One chat message: {"role": "system" | "user" | "assistant", "content": ...}.
+Message = dict[str, str]
+
+
+@dataclass(frozen=True)
+class ChatReply:
+    # The model's answer, unparsed.
+    text: str
+    # Time the server spent loading the model for this request.
+    load_seconds: float = 0.0
+
+
+class LLMError(Exception):
+    """Ollama could not be reached, or refused the request."""
+
+
 class World(Protocol):
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
@@ -73,15 +93,37 @@ class World(Protocol):
         """The current time, timezone-aware."""
         ...
 
+    def chat(
+        self,
+        model: str,
+        messages: list[Message],
+        *,
+        schema: dict[str, Any] | None = None,
+        think: bool = False,
+        num_ctx: int | None = None,
+        temperature: float | None = None,
+    ) -> ChatReply:
+        """The model's answer; `schema` constrains it to JSON. Raises LLMError."""
+        ...
+
+    def loaded_context_size(self, model: str) -> int | None:
+        """The context size the model is loaded with on the server, or None if not loaded.
+
+        Raises LLMError.
+        """
+        ...
+
 
 class RealWorld:
-    def __init__(self, timeout: float = 20.0) -> None:
+    def __init__(self, timeout: float = 20.0, ollama_host: str | None = None) -> None:
         self._http = httpx.Client(
             headers={"User-Agent": USER_AGENT},
             follow_redirects=True,
             timeout=timeout,
         )
         self._youtube = YouTubeTranscriptApi()
+        self._ollama = ollama.Client(host=ollama_host, timeout=LLM_TIMEOUT)
+        self._ollama_host = ollama_host or os.environ.get("OLLAMA_HOST") or "localhost:11434"
 
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
@@ -123,3 +165,49 @@ class RealWorld:
 
     def now(self) -> datetime:
         return datetime.now(UTC)
+
+    def chat(
+        self,
+        model: str,
+        messages: list[Message],
+        *,
+        schema: dict[str, Any] | None = None,
+        think: bool = False,
+        num_ctx: int | None = None,
+        temperature: float | None = None,
+    ) -> ChatReply:
+        options: dict[str, Any] = {}
+        if num_ctx is not None:
+            options["num_ctx"] = num_ctx
+        if temperature is not None:
+            options["temperature"] = temperature
+        try:
+            r = self._ollama.chat(
+                model=model, messages=messages, format=schema, think=think, options=options
+            )
+        except _OLLAMA_ERRORS as e:
+            raise self._llm_error(e) from e
+        return ChatReply(text=r.message.content or "", load_seconds=(r.load_duration or 0) / 1e9)
+
+    def loaded_context_size(self, model: str) -> int | None:
+        try:
+            running = self._ollama.ps().models
+        except _OLLAMA_ERRORS as e:
+            raise self._llm_error(e) from e
+        wanted = _tagged(model)
+        for m in running:
+            if wanted in (_tagged(m.model or ""), _tagged(m.name or "")):
+                return m.context_length
+        return None
+
+    def _llm_error(self, e: Exception) -> LLMError:
+        return LLMError(f"Ollama at {self._ollama_host}: {type(e).__name__}: {e}")
+
+
+# The client turns connection failures into ConnectionError but lets timeouts through.
+_OLLAMA_ERRORS = (ollama.ResponseError, ollama.RequestError, ConnectionError, httpx.HTTPError)
+
+
+def _tagged(model: str) -> str:
+    """Ollama lists `qwen3.8` as `qwen3.8:latest`."""
+    return model if ":" in model.rsplit("/", 1)[-1] else f"{model}:latest"

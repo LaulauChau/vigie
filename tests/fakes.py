@@ -1,9 +1,10 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from vigie.config import Config
-from vigie.world import FetchError, Response, TranscriptSegment
+from vigie.world import ChatReply, FetchError, Message, Response, TranscriptSegment
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -27,6 +28,11 @@ class FakeWorld:
         self.current_time = now
         self.transcripts: dict[str, list[TranscriptSegment] | Exception] = {}
         self.transcript_requests: list[str] = []
+        # The fake LLM: scripted replies, answered in order, and the requests received.
+        self.replies: list[str | ChatReply | Exception] = []
+        self.chats: list[ChatRequest] = []
+        # What the server's running-models endpoint reports, or raises.
+        self.loaded_ctx: int | None | Exception = None
 
     def fetch(
         self, url: str, etag: str | None = None, last_modified: str | None = None
@@ -48,6 +54,39 @@ class FakeWorld:
 
     def now(self) -> datetime:
         return self.current_time
+
+    def chat(
+        self,
+        model: str,
+        messages: list[Message],
+        *,
+        schema: dict[str, Any] | None = None,
+        think: bool = False,
+        num_ctx: int | None = None,
+        temperature: float | None = None,
+    ) -> ChatReply:
+        self.chats.append(ChatRequest(model, messages, schema, think, num_ctx, temperature))
+        if not self.replies:
+            raise AssertionError("unexpected LLM call: no reply scripted")
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return ChatReply(text=reply) if isinstance(reply, str) else reply
+
+    def loaded_context_size(self, model: str) -> int | None:
+        if isinstance(self.loaded_ctx, Exception):
+            raise self.loaded_ctx
+        return self.loaded_ctx
+
+
+@dataclass(frozen=True)
+class ChatRequest:
+    model: str
+    messages: list[Message]
+    schema: dict[str, Any] | None
+    think: bool
+    num_ctx: int | None
+    temperature: float | None
 
 
 def ok(name: str) -> Response:
