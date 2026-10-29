@@ -131,6 +131,13 @@ class Store:
                 ),
             )
 
+    def item_id(self, url: str) -> int | None:
+        """The id of the Item stored under this normalized URL, if any."""
+        row = self._db.execute(
+            "SELECT id FROM items WHERE url_hash = ?", (url_hash(url),)
+        ).fetchone()
+        return int(row["id"]) if row else None
+
     def items(self) -> list[Item]:
         rows = self._db.execute(
             "SELECT items.*, sources.name AS source FROM items"

@@ -6,10 +6,11 @@ from urllib.parse import parse_qs, urlsplit
 
 import trafilatura
 
-from vigie.config import Config, RssSource, YoutubeSource
+from vigie.config import Config, HtmlIndexSource, RssSource, YoutubeSource
 from vigie.feeds import Entry, NotAFeed, entry_date, is_podcast, itunes_duration, parse_feed
+from vigie.html_index import Article, NoArticleLinks, article_links, read_article
 from vigie.store import Item, Kind, NewItem, SourceState, Store
-from vigie.world import FetchError, World
+from vigie.world import FetchError, Response, World
 
 # Below this, the page is a teaser or a paywall, not something worth assessing.
 MIN_WORDS = 100
@@ -21,7 +22,7 @@ RETRY_STATUSES = {408, 429}
 class CollectReport:
     # Items that got their text this run, ready to be assessed.
     new: int = 0
-    # Items stored with a skip reason this run.
+    # Items stored with a skip reason this run, besides HTML index Items too old to keep.
     skipped: int = 0
     # Item pages that could not be fetched this time; they are retried next run.
     unreachable: int = 0
@@ -33,13 +34,16 @@ def collect(config: Config, store: Store, world: World) -> CollectReport:
     report = CollectReport()
     oldest = world.now() - timedelta(days=config.settings.max_age_days)
     for source in config.sources:
-        if isinstance(source, (RssSource, YoutubeSource)):
+        if isinstance(source, (RssSource, YoutubeSource, HtmlIndexSource)):
             state = store.source(source.name, source.type, source.url)
             try:
-                _collect_feed(source, state, oldest, store, world)
+                if isinstance(source, HtmlIndexSource):
+                    _collect_index(source, state, oldest, store, world, report)
+                else:
+                    _collect_feed(source, state, oldest, store, world)
             # Whatever goes wrong with one Source, the others are still collected.
             except Exception as e:
-                known = isinstance(e, (FetchError, NotAFeed))
+                known = isinstance(e, (FetchError, NotAFeed, NoArticleLinks))
                 error = str(e) if known else f"{type(e).__name__}: {e}"
                 store.record_error(state.id, world.now(), error)
                 report.errors[source.name] = error
@@ -111,6 +115,66 @@ def _add_entry(
     )
 
 
+def _collect_index(
+    source: HtmlIndexSource,
+    state: SourceState,
+    oldest: datetime,
+    store: Store,
+    world: World,
+    report: CollectReport,
+) -> None:
+    response = world.fetch(source.url)
+    if response.status >= 400:
+        raise FetchError(f"HTTP {response.status}")
+    links = article_links(source, response.body)
+    if not links:
+        raise NoArticleLinks("no article link matches link_regex")
+    for url in links:
+        if store.item_id(url) is None:
+            _add_linked_item(url, state, oldest, store, world, report)
+    store.record_fetch(state.id, world.now(), None, None)
+
+
+def _add_linked_item(
+    url: str,
+    state: SourceState,
+    oldest: datetime,
+    store: Store,
+    world: World,
+    report: CollectReport,
+) -> None:
+    """Fetch a new linked page once: its metadata makes the Item, its text fills it."""
+    try:
+        response = world.fetch(url)
+    except FetchError:
+        response = None
+    if response is None or _retry_later(response):
+        # Not stored, so the link is tried again next run while the index lists it.
+        report.unreachable += 1
+        return
+    now = world.now()
+    article = read_article(response.body, now) if response.status < 400 else Article(None, None)
+    published_at = article.published_at or now
+    store.add_item(
+        NewItem(
+            source_id=state.id,
+            url=url,
+            title=article.title or url,
+            published_at=published_at,
+            first_seen_at=now,
+            kind="article",
+            duration_s=None,
+        )
+    )
+    item_id = store.item_id(url)
+    assert item_id is not None
+    if published_at < oldest:
+        # Stored rather than ignored, so the page is not fetched again next run.
+        store.skip(item_id, f"too old (published {published_at.date().isoformat()})")
+        return
+    _store_text(item_id, url, response, store, report)
+
+
 def _extract(
     item: Item, oldest: datetime, store: Store, world: World, report: CollectReport
 ) -> None:
@@ -123,16 +187,27 @@ def _extract(
     except FetchError as e:
         _unreachable(item, str(e), oldest, store, report)
         return
-    if response.status in RETRY_STATUSES or response.status >= 500:
+    if _retry_later(response):
         _unreachable(item, f"HTTP {response.status}", oldest, store, report)
         return
+    _store_text(item.id, item.url, response, store, report)
+
+
+def _retry_later(response: Response) -> bool:
+    return response.status in RETRY_STATUSES or response.status >= 500
+
+
+def _store_text(
+    item_id: int, url: str, response: Response, store: Store, report: CollectReport
+) -> None:
+    """Store the page text, or a skip reason when the page is missing or too short."""
     if response.status >= 400:
         reason = f"HTTP {response.status}"
     else:
-        text = trafilatura.extract(response.body, url=item.url) or ""
-        _keep_text(item, text, store, report)
+        text = trafilatura.extract(response.body, url=url) or ""
+        _keep_text(item_id, text, store, report)
         return
-    store.skip(item.id, reason)
+    store.skip(item_id, reason)
     report.skipped += 1
 
 
@@ -156,19 +231,19 @@ def _extract_transcript(
         return
     text = " ".join(" ".join(s.text.split()) for s in segments)
     last = segments[-1]
-    _keep_text(item, text, store, report, duration_s=round(last.start + last.duration))
+    _keep_text(item.id, text, store, report, duration_s=round(last.start + last.duration))
 
 
 def _keep_text(
-    item: Item, text: str, store: Store, report: CollectReport, duration_s: int | None = None
+    item_id: int, text: str, store: Store, report: CollectReport, duration_s: int | None = None
 ) -> None:
     """Store the text if it is long enough to be worth assessing, else skip the Item."""
     words = len(text.split())
     if words >= MIN_WORDS:
-        store.set_text(item.id, text, words, duration_s)
+        store.set_text(item_id, text, words, duration_s)
         report.new += 1
         return
-    store.skip(item.id, f"too little text ({words} words)" if words else "no text extracted")
+    store.skip(item_id, f"too little text ({words} words)" if words else "no text extracted")
     report.skipped += 1
 
 

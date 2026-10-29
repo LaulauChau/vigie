@@ -1,14 +1,11 @@
 """`vigie check-sources`: fetch every Source once and report what came back."""
 
-import re
 from dataclasses import dataclass, replace
 from datetime import date
-from urllib.parse import urljoin, urlsplit
-
-from bs4 import BeautifulSoup
 
 from vigie.config import Config, HtmlIndexSource, Source
 from vigie.feeds import NotAFeed, entry_date, parse_feed
+from vigie.html_index import article_links
 from vigie.world import FetchError, World
 
 
@@ -97,26 +94,3 @@ def _check_index(row: SourceCheck, source: HtmlIndexSource, body: bytes) -> Sour
     if not links:
         return replace(row, links=0, error="no article link matches link_regex")
     return replace(row, links=len(links))
-
-
-def article_links(source: HtmlIndexSource, body: bytes) -> list[str]:
-    """Unique article URLs on an index page: same host, path matches, not excluded."""
-    soup = BeautifulSoup(body, "html.parser")
-    host = _host(source.url)
-    found: dict[str, str] = {}
-    for a in soup.find_all("a", href=True):
-        url = urljoin(source.url, str(a["href"]))
-        parts = urlsplit(url)
-        if parts.scheme not in ("http", "https") or _host(url) != host:
-            continue
-        path = parts.path
-        if not re.search(source.link_regex, path):
-            continue
-        if any(re.search(pattern, path) for pattern in source.exclude):
-            continue
-        found.setdefault(path.rstrip("/"), f"{parts.scheme}://{parts.netloc}{path}")
-    return list(found.values())
-
-
-def _host(url: str) -> str:
-    return (urlsplit(url).hostname or "").removeprefix("www.")

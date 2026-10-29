@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>An article from the summer</title>
+  <meta property="article:published_time" content="2026-08-01T09:00:00Z">
+</head>
+<body>
+  <nav><a href="/">Home</a> <a href="/resources/articles">Articles</a></nav>
+  <article>
+    <h1>An article from the summer</h1>
+    <p>For the last three months our team has been running several coding agents at the same time on one repository. Each agent gets its own git worktree, so the agents never step on each other's files and every change stays on its own branch until a human reviews it.</p>
+    <p>The setup is simple. A small script creates a worktree per task, copies the shared context file into it, and starts an agent with a short plan. When the agent is done, the script runs the test suite and opens a pull request. Nothing is merged without a review by the developer who wrote the plan.</p>
+    <p>What surprised us most was how much the quality of the plan mattered. Vague plans produced large, unfocused diffs that took longer to review than writing the code by hand. Precise plans with a clear seam and a failing test produced small changes that were easy to accept or reject.</p>
+    <p>We also learned to keep the number of parallel agents low. Three agents was the sweet spot for one reviewer. Beyond that, the review queue grew faster than we could read it, and the time saved by the agents was lost waiting for feedback.</p>
+  </article>
+  <footer>Copyright Example</footer>
+</body>
+</html>
