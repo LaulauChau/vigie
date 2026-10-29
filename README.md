@@ -18,7 +18,7 @@ Settings, Topics and Sources live in `vigie.yaml`. Pass another file with `--con
 ```sh
 uv run --env-file .env vigie --help
 uv run --env-file .env vigie check-sources   # status table of every Source, writes nothing
-uv run --env-file .env vigie collect         # store new RSS/Atom Items and their text in DB_PATH
+uv run --env-file .env vigie collect         # store new Items from every Source with their text in DB_PATH, then assess them
 uv run --env-file .env vigie score           # assess Items not assessed yet (collect does this too)
 uv run --env-file .env vigie score --rescore [--since 14d]   # assess the Window again, fetches nothing
 ```
