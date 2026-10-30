@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+.mypy_cache/
+.pytest_cache/
+
+# Local settings and data
+.env
+*.db
+digests/
+
+# Claude Code worktrees and local state
+.claude/

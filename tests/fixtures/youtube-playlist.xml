@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+  <link rel="self" href="http://www.youtube.com/feeds/videos.xml?playlist_id=UULFexample"/>
+  <id>yt:playlist:UULFexample</id>
+  <yt:playlistId>UULFexample</yt:playlistId>
+  <title>Videos</title>
+  <author><name>Example Channel</name></author>
+  <published>2020-01-01T00:00:00+00:00</published>
+  <entry>
+    <id>yt:video:aaaaaaaaaaa</id>
+    <yt:videoId>aaaaaaaaaaa</yt:videoId>
+    <title>My Claude Code workflow</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=aaaaaaaaaaa"/>
+    <published>2026-10-24T15:00:00+00:00</published>
+    <updated>2026-10-25T10:00:00+00:00</updated>
+  </entry>
+  <entry>
+    <id>yt:video:bbbbbbbbbbb</id>
+    <yt:videoId>bbbbbbbbbbb</yt:videoId>
+    <title>One tip in 30 seconds</title>
+    <link rel="alternate" href="https://www.youtube.com/shorts/bbbbbbbbbbb"/>
+    <published>2026-10-28T15:00:00+00:00</published>
+  </entry>
+  <entry>
+    <id>yt:video:ccccccccccc</id>
+    <yt:videoId>ccccccccccc</yt:videoId>
+    <title>Agents in parallel</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=ccccccccccc"/>
+    <published>2026-10-21T15:00:00+00:00</published>
+  </entry>
+</feed>
