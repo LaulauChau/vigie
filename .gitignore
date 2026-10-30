@@ -13,3 +13,6 @@ wheels/
 .env
 *.db
 digests/
+
+# Claude Code worktrees and local state
+.claude/
